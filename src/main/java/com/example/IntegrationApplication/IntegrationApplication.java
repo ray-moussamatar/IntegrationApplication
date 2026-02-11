@@ -7,6 +7,7 @@ import org.springframework.integration.core.GenericHandler;
 import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.MessageChannels;
+import org.springframework.integration.http.dsl.Http;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.MessageChannel;
 
@@ -43,6 +44,7 @@ public class IntegrationApplication {
 	IntegrationFlow flow1 (){
 		return IntegrationFlow
 				.from(atob())
+				.log()
 				.handle((GenericHandler<String>) (payload, _) -> {
 					System.out.println("the payload is " + payload);
 					return null;
@@ -50,4 +52,23 @@ public class IntegrationApplication {
 				.get();
 	}
 
+	@Bean
+	IntegrationFlow httpFlow(){
+		 return IntegrationFlow
+				 .from(Http.inboundGateway("/hello")
+						 .requestPayloadType(String.class))
+				 .channel(atob())
+				 .get();
+	}
+
+	@Bean
+	IntegrationFlow processingFlow() {
+		return IntegrationFlow
+				.from(atob())
+				.handle(( payload, _) -> {
+					System.out.println("Processing payload: " + payload);
+					return "Processed: " + payload;
+				})
+				.get();
+	}
 }
