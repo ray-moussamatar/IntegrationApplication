@@ -13,8 +13,6 @@ import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 
-import java.time.Instant;
-
 @SpringBootApplication
 public class IntegrationApplication {
 
@@ -96,7 +94,7 @@ public class IntegrationApplication {
 				.from(Http.inboundChannelAdapter("/adapter")
 						.requestMapping(r -> r.methods(HttpMethod.POST))
 						.requestPayloadType(String.class)
-						.statusCodeFunction(m -> HttpStatus.OK.value())
+						.statusCodeFunction(_ -> HttpStatus.OK.value())
 				)
 				.enrichHeaders(h -> h.header("source", "adapter"))
 				.channel("atob")
@@ -118,7 +116,7 @@ public class IntegrationApplication {
 	IntegrationFlow defaultProcessingFlow() {
 		return IntegrationFlow
 				.from("defaultChannel")
-				.handle((payload, headers) ->  {
+				.handle((payload, _) ->  {
 					System.out.println("Default payload: " + payload);
 					return null;
 				})
