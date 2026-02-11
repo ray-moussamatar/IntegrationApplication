@@ -2,6 +2,7 @@ package com.example.IntegrationApplication;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.HttpStatus;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.core.GenericHandler;
 import org.springframework.integration.core.MessageSource;
@@ -26,11 +27,13 @@ public class IntegrationApplication {
 	}
 
 
-	@Bean
-	MessageChannel atoc(){
-		return new DirectChannel();
-//		return MessageChannels.direct().getObject();
-	}
+//	@Bean
+//	MessageChannel atoc(){
+//		return new DirectChannel();
+////		return MessageChannels.direct().getObject();
+//	}
+
+	// Direct Flow
 	@Bean
 	IntegrationFlow Flow() {
 		return IntegrationFlow
@@ -52,11 +55,13 @@ public class IntegrationApplication {
 				.get();
 	}
 
+	// inboundGateway
 	@Bean
 	IntegrationFlow httpFlow(){
 		 return IntegrationFlow
 				 .from(Http.inboundGateway("/hello")
 						 .requestPayloadType(String.class))
+				 .log()
 				 .channel(atob())
 				 .get();
 	}
@@ -69,6 +74,29 @@ public class IntegrationApplication {
 					System.out.println("Processing payload: " + payload);
 					return "Processed: " + payload;
 				})
+				.get();
+	}
+
+	// inboundAdapter
+	@Bean
+	IntegrationFlow httpAdapterFlow () {
+		return  IntegrationFlow
+				.from(Http.inboundChannelAdapter("/demo-inbound")
+						.requestPayloadType(String.class)
+						.statusCodeFunction(m -> HttpStatus.OK.value())
+				)
+				.channel(atob())
+				.get();
+	}
+
+	@Bean
+	IntegrationFlow httpAdapterFlow2 () {
+		return IntegrationFlow
+				.from(atob())
+				.handle(((payload, headers) ->  {
+					System.out.println("Processing payload: " + payload);
+					return null;
+				}))
 				.get();
 	}
 }
