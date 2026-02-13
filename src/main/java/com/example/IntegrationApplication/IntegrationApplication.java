@@ -14,6 +14,7 @@ import org.springframework.integration.http.dsl.Http;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessagingException;
 
 @SpringBootApplication
 public class IntegrationApplication {
@@ -218,16 +219,31 @@ public class IntegrationApplication {
                       "Ticket Processed: [BUG] Login broken (priority=1)"
 	 */
 
-	@Bean IntegrationFlow ticketProcessingFlow() {
+	@Bean
+	MessageChannel ticketErrorChannel() {
+		return MessageChannels.direct().getObject();
+	}
+
+	@Bean
+	IntegrationFlow ticketErrorFlow() {
+		return IntegrationFlow
+				.from("ticketErrorChannel")
+				.handle((payload, headers) -> {
+					Throwable cause = ((MessagingException) payload).getCause();
+					while (cause.getCause() != null) {
+						cause = cause.getCause();
+					}
+					return MessageBuilder.withPayload("Error: " + cause.getMessage())
+							.setHeader(org.springframework.integration.http.HttpHeaders.STATUS_CODE, 400)
+							.build();
+				})
+				.get();
+	}
+
+	@Bean IntegrationFlow ticketProcessingFlow(TicketProcessingHandler ticketProcessingHandler) {
 		 return IntegrationFlow
 				 .from("ticketChannel")
-				 .handle(((payload, headers) -> {
-					 System.out.println("=== Ticket Received ===");
-					 System.out.println("payload: " + payload);
-					 System.out.println("Type: " + headers.get("ticket_type"));
-					 System.out.println("source: " + headers.get("source"));
-					 return "Ticket Processed: " + payload;
-				 }))
+				 .handle(ticketProcessingHandler)
 				 .get();
 	}
 
@@ -238,9 +254,11 @@ public class IntegrationApplication {
 						 .requestMapping(r -> r.methods(HttpMethod.POST)
 								 .consumes(MediaType.APPLICATION_JSON_VALUE))
 						 .headerExpression("ticket_type", "#pathVariables.ticket_type")
-						 .requestPayloadType(TicketRequest.class))
+						 .requestPayloadType(TicketRequest.class)
+						 .errorChannel("ticketErrorChannel")
+				 )
 				 .log(LoggingHandler.Level.INFO, "Ticket.Inbound")
-				 .transform(TicketRequest.class, ticketTransformer)
+				 .transform(ticketTransformer)
 				 .enrich(e -> e.header("source", "ticket-api"))
 				 .channel("ticketChannel")
 				 .get();
