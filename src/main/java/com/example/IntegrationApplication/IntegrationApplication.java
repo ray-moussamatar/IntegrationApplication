@@ -4,10 +4,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.integration.core.GenericHandler;
 import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.MessageChannels;
+import org.springframework.integration.handler.LoggingHandler;
 import org.springframework.integration.http.dsl.Http;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
@@ -105,7 +107,7 @@ public class IntegrationApplication {
 	IntegrationFlow processingAdapterFlow() {
 		return IntegrationFlow
 				.from("adapterChannel")
-				.handle(((payload, headers) ->  {
+				.handle(((payload, _) ->  {
 					System.out.println("Processing payload: " + payload);
 					return null;
 				}))
@@ -139,4 +141,108 @@ public class IntegrationApplication {
 				.get();
 	}
 
+
+	@Bean
+	MessageChannel ticketChannel() {
+		return MessageChannels.direct().getObject();
+	}
+
+	/*
+	How it all connects — the diagram
+
+                           curl POST /api/tickets/bug
+                           {"title":"Login broken", ...}
+                                      |
+                                      v
+    ┌─────────────────────────────────────────────────────────────┐
+    │            IntegrationInboundFlow (line 163)                │
+    │                                                             │
+    │  1. HTTP Inbound Gateway                                    │
+    │     ┌───────────────────────────────────────────────┐       │
+    │     │ endpoint: /api/tickets/{ticket_type}          │       │
+    │     │ method:   POST only                           │       │
+    │     │ consumes: application/json only               │       │
+    │     │ payload:  JSON --> TicketRequest (auto-deser)  │       │
+    │     │ header:   "ticket_type" = "bug" (from URL)    │       │
+    │     └───────────────────────────┬───────────────────┘       │
+    │                                 │                           │
+    │     Message at this point:                                  │
+    │       payload = TicketRequest{title="Login broken",...}     │
+    │       headers = {ticket_type="bug"}                         │
+    │                                 │                           │
+    │  2. .log(INFO, "Ticket.Inbound")                            │
+    │     └─> prints to console with category name                │
+    │                                 │                           │
+    │  3. .transform(TicketTransformer)                           │
+    │     ┌───────────────────────────┴───────────────────┐       │
+    │     │ TicketRequest ──> "[BUG] Login broken (p=1)"  │       │
+    │     └───────────────────────────┬───────────────────┘       │
+    │                                 │                           │
+    │     Message at this point:                                  │
+    │       payload = "[BUG] Login broken (priority=1)"  (String) │
+    │       headers = {ticket_type="bug"}                         │
+    │                                 │                           │
+    │  4. .enrich(header("source", "ticket-api"))                 │
+    │     └─> adds source header to the message                   │
+    │                                 │                           │
+    │     Message at this point:                                  │
+    │       payload = "[BUG] Login broken (priority=1)"           │
+    │       headers = {ticket_type="bug", source="ticket-api"}    │
+    │                                 │                           │
+    │  5. .channel("ticketChannel")                               │
+    │     └─> sends message to ticketChannel                      │
+    └─────────────────────────────────┬───────────────────────────┘
+                                      │
+                                      v
+                ┌──── ticketChannel (line 146) ────┐
+                │     DirectChannel (synchronous)  │
+                └──────────────┬───────────────────┘
+                               │
+                               v
+    ┌──────────────────────────────────────────────────────┐
+    │         ticketProcessingFlow (line 150)               │
+    │                                                      │
+    │  .handle() prints:                                   │
+    │    === Ticket Received ===                           │
+    │    payload: [BUG] Login broken (priority=1)          │
+    │    Type: bug                                         │
+    │    source: ticket-api                                │
+    │                                                      │
+    │  Returns: "Ticket Processed: ..."                    │
+    │  (goes back as HTTP response because we used         │
+    │   inboundGateway, which is request/reply)            │
+    └──────────────────────────────────────────────────────┘
+                               │
+                               v
+                      HTTP 200 Response
+                      "Ticket Processed: [BUG] Login broken (priority=1)"
+	 */
+
+	@Bean IntegrationFlow ticketProcessingFlow() {
+		 return IntegrationFlow
+				 .from("ticketChannel")
+				 .handle(((payload, headers) -> {
+					 System.out.println("=== Ticket Received ===");
+					 System.out.println("payload: " + payload);
+					 System.out.println("Type: " + headers.get("ticket_type"));
+					 System.out.println("source: " + headers.get("source"));
+					 return "Ticket Processed: " + payload;
+				 }))
+				 .get();
+	}
+
+	@Bean
+	IntegrationFlow IntegrationInboundFlow(TicketTransformer ticketTransformer){
+		 return IntegrationFlow
+				 .from(Http.inboundGateway("/api/tickets/{ticket_type}")
+						 .requestMapping(r -> r.methods(HttpMethod.POST)
+								 .consumes(MediaType.APPLICATION_JSON_VALUE))
+						 .headerExpression("ticket_type", "#pathVariables.ticket_type")
+						 .requestPayloadType(TicketRequest.class))
+				 .log(LoggingHandler.Level.INFO, "Ticket.Inbound")
+				 .transform(TicketRequest.class, ticketTransformer)
+				 .enrich(e -> e.header("source", "ticket-api"))
+				 .channel("ticketChannel")
+				 .get();
+	}
 }
