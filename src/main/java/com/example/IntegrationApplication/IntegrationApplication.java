@@ -44,7 +44,7 @@ public class IntegrationApplication {
 	}
 
 	// Direct Flow
-	@Bean
+	//@Bean
 	IntegrationFlow Flow() {
 		return IntegrationFlow
 				.from((MessageSource<String>) () ->
@@ -228,7 +228,7 @@ public class IntegrationApplication {
 	IntegrationFlow ticketErrorFlow() {
 		return IntegrationFlow
 				.from("ticketErrorChannel")
-				.handle((payload, headers) -> {
+				.handle((payload, _) -> {
 					Throwable cause = ((MessagingException) payload).getCause();
 					while (cause.getCause() != null) {
 						cause = cause.getCause();
@@ -247,8 +247,25 @@ public class IntegrationApplication {
 				 .get();
 	}
 
+//	@Bean
+//	IntegrationFlow IntegrationInboundFlow(TicketTransformer ticketTransformer){
+//		 return IntegrationFlow
+//				 .from(Http.inboundGateway("/api/tickets/{ticket_type}")
+//						 .requestMapping(r -> r.methods(HttpMethod.POST)
+//								 .consumes(MediaType.APPLICATION_JSON_VALUE))
+//						 .headerExpression("ticket_type", "#pathVariables.ticket_type")
+//						 .requestPayloadType(TicketRequest.class)
+//						 .errorChannel("ticketErrorChannel")
+//				 )
+//				 .log(LoggingHandler.Level.INFO, "Ticket.Inbound")
+//				 .transform(ticketTransformer)
+//				 .enrich(e -> e.header("source", "ticket-api"))
+//				 .channel("ticketChannel")
+//				 .get();
+//	}
+
 	@Bean
-	IntegrationFlow IntegrationInboundFlow(TicketTransformer ticketTransformer){
+	IntegrationFlow IntegrationInboundFlow(TicketDetailTransformer ticketDetailTransformer) {
 		 return IntegrationFlow
 				 .from(Http.inboundGateway("/api/tickets/{ticket_type}")
 						 .requestMapping(r -> r.methods(HttpMethod.POST)
@@ -258,7 +275,7 @@ public class IntegrationApplication {
 						 .errorChannel("ticketErrorChannel")
 				 )
 				 .log(LoggingHandler.Level.INFO, "Ticket.Inbound")
-				 .transform(ticketTransformer)
+				 .transform(ticketDetailTransformer)
 				 .enrich(e -> e.header("source", "ticket-api"))
 				 .channel("ticketChannel")
 				 .get();
