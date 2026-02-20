@@ -1,3 +1,9 @@
+# IDE
+.idea/
+
+# Build
+target/
+
 # Compiled class file
 *.class
 
